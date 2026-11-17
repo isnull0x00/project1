@@ -11,24 +11,27 @@
 
 | | |
 |---|---|
-| 동시 예약 | 같은 시간대에 동시 요청 10건을 보내 **1건만 저장**되고 9건은 거부됨을 확인 |
+| 카테고리 통계 | 예약이 0건인 카테고리도 보이도록 `RIGHT OUTER JOIN`으로 건수 집계 |
 | 리뷰 통계 | 전체 건수 · 평균 평점 · 별점별 개수를 **한 번의 쿼리**로 집계 |
 | 예약 흐름 | 제품 → 일정 → 확정의 3단계 화면 (FullCalendar, axios 비동기) |
 | 데이터 | `RESERVE` 테이블 중심으로 5개 테이블 연결 |
 
 ## 제가 맡은 부분
 
-- 메인 화면(예약일 표시) · 로그인/로그아웃
-- **동시 예약 방지**: 자바 코드로 빈 시간을 확인하는 것만으로는 동시 요청의 충돌을 막을 수 없어, `SLOT_KEY` + `UNIQUE` 제약으로 DB가 같은 날짜·슬롯을 1건만 허용하게 했습니다.
-- 관리자 예약 접수 건수 통계, 리뷰 DB 설계와 Spring 구현, 리뷰 데이터를 관리자 페이지에 연결
+- 메인 화면(예약일 표시) · 로그아웃, 예약 조회 · 시간 선택 화면
+- **리뷰 도메인 전체**: DB 설계, Spring(Controller · Service · Mapper), 리뷰 작성 화면
+- **관리자 대시보드 통계**: 예약 접수 건수, 카테고리별 건수, 리뷰 통계를 쿼리 한 번씩으로 집계
+- 공통 UI 스타일(`common.css`, `reset.css`) 
+
+동시 예약 방지(자바 사전 검사 + DB 유니크 제약)는 팀원이 구현했습니다. 저는 구현자가 아니라 팀장으로 팀의 기능을 취합했습니다.
 
 ## 핵심 코드
 
 | 주제 | 위치 |
 |---|---|
-| 중복 예약 검사 | [`ReserveService.java`](src/main/java/com/commit/project1/reserve/service/ReserveService.java#L119) |
-| 중복 예약 응답 | [`ReserveController.java`](src/main/java/com/commit/project1/reserve/controller/ReserveController.java#L144) |
 | 리뷰 통계 한 번에 집계 (`CASE WHEN` + `HashMap`) | [`review-mapper.xml`](src/main/resources/mapper/review-mapper.xml#L36) |
+| 카테고리별 예약 건수 (`RIGHT OUTER JOIN`) | [`reserve-mapper.xml`](src/main/resources/mapper/reserve-mapper.xml#L177) |
+| 관리자 대시보드 컨트롤러 | [`AdminController.java`](src/main/java/com/commit/project1/admin/controller/AdminController.java) |
 
 ```xml
 <select id="selectStats" resultType="HashMap">
@@ -39,6 +42,8 @@
   FROM REVIEW
 </select>
 ```
+
+`HashMap`으로 받아 DTO를 만들지 않은 대신 타입 안정성은 포기했습니다.
 
 ## 기술 스택
 
@@ -70,8 +75,9 @@ src/main/resources
 
 ## 한계와 다음 단계
 
-- DB 제약은 중복을 막지만, 사용자는 **제출한 뒤에야** 거절을 알게 됩니다. 일정을 고르는 시점에 알려 주도록 Redis 슬롯 홀딩(TTL) 도입을 검토합니다.
-- 동시 예약 10건 실험은 브라우저 콘솔(`Promise.all`)로 한 수동 확인이며, 자동 테스트로는 만들지 않았습니다.
+- 자동 테스트가 애플리케이션 로드 테스트 하나뿐이라 통계 쿼리를 테스트로 고정하지 못했습니다.
+- 통계는 요청마다 전체 테이블을 집계합니다. 데이터가 커지면 느려질 수 있고 측정하지 않았습니다.
+- 동시 예약은 제출한 뒤에야 거절을 알게 되므로, 일정 선택 시점에 알려 주는 구조(예: Redis 슬롯 홀딩)가 다음 과제입니다.
 
 ## 기록
 
