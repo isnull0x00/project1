@@ -57,21 +57,22 @@ ALTER TABLE RESERVE ADD CONSTRAINT UX_RESERVE_SLOT UNIQUE (SLOT_KEY);
 
 | 주제 | 위치 |
 |---|---|
-| 리뷰 통계 한 번에 집계 (`CASE WHEN` + `HashMap`) | [`review-mapper.xml`](src/main/resources/mapper/review-mapper.xml#L36) |
-| 카테고리별 예약 건수 (`RIGHT OUTER JOIN`) | [`reserve-mapper.xml`](src/main/resources/mapper/reserve-mapper.xml#L177) |
-| 관리자 대시보드 컨트롤러 | [`AdminController.java`](src/main/java/com/commit/project1/admin/controller/AdminController.java) |
+| 동시 예약 중복을 사용자 메시지로 바꾸는 처리 | [`ReserveController.java`](src/main/java/com/commit/project1/reserve/controller/ReserveController.java#L141) |
+| 이미 예약된 슬롯 번호 조회 | [`reserve-mapper.xml`](src/main/resources/mapper/reserve-mapper.xml#L51) |
+| 예약 시간(타임슬롯) 선택 화면 | [`reserve_time.js`](src/main/resources/static/js/pages/reserve/reserve_time.js) |
+| 예약 내역 조회 화면 | [`reserve_list.js`](src/main/resources/static/js/pages/reserve/reserve_list.js) |
 
-```xml
-<select id="selectStats" resultType="HashMap">
-  SELECT COUNT(*) AS totalCount, ROUND(AVG(RATING), 1) AS avgRating,
-         SUM(CASE WHEN RATING = 5 THEN 1 ELSE 0 END) AS star5,
-         SUM(CASE WHEN RATING = 4 THEN 1 ELSE 0 END) AS star4,
-         SUM(CASE WHEN RATING <= 3 THEN 1 ELSE 0 END) AS star3Below
-  FROM REVIEW
-</select>
+```java
+try {
+  reserveService.saveReserve(dto);
+} catch (DataIntegrityViolationException e) {
+  result.put("success", false);
+  result.put("error", "이미 예약된 시간입니다.");
+  return result;
+}
 ```
 
-`HashMap`으로 받아 DTO를 만들지 않은 대신 타입 안정성은 포기했습니다.
+DB의 중복 오류를 서비스 코드가 직접 판단하지 않고, 예외를 받아 사용자 메시지로만 바꿉니다.
 
 ## 기술 스택
 
