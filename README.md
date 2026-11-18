@@ -9,7 +9,36 @@
 
 - 예약 DB 스키마를 12개에서 4개 테이블로 줄여 설계했습니다.
 - 날짜·시간 선택 캘린더와 타임슬롯, 예약 내역 조회와 취소 기능 구현에 참여했고, 예약 내역 조회 화면(`reserve_list`)은 주로 제가 작성했습니다.
-- **동시 예약 방지**: 자바 if 검증은 동시 요청에서 둘 다 통과할 수 있어서, MariaDB 가상 컬럼(`SLOT_KEY`)에 유니크 인덱스를 걸어 DB가 막게 했습니다. 취소된 예약은 키가 NULL이라 같은 시간에 다시 예약할 수 있습니다. 같은 슬롯에 10건을 동시에 보내 1건만 저장되고 9건이 차단(409)되는 것을 직접 확인했습니다.
+
+### 동시 예약 방지
+
+- **문제:** 자바 `if`로 중복을 확인해도, 확인과 저장 사이의 짧은 틈에 두 요청이 모두 통과해 같은 시간이 이중 예약될 수 있습니다.
+- **해결:** MariaDB 가상 컬럼 `SLOT_KEY`에 유니크 인덱스를 걸어, 중복 판단을 DB가 하게 했습니다. 취소된 예약은 키가 `NULL`이라 같은 시간에 다시 예약할 수 있습니다.
+- **확인:** 브라우저 콘솔에서 같은 날짜·슬롯으로 10건을 동시에 보내 1건만 저장되고 9건이 "이미 예약된 시간입니다"로 차단되는 것을 직접 확인했고, DB 조회에서도 1건만 있었습니다.
+
+<details>
+<summary>검토한 방식과 동작 방식 보기</summary>
+
+| 방식 | 판단 |
+|---|---|
+| 비관적 락 (`SELECT ... FOR UPDATE`) | 다른 요청이 대기열에 묶여, 단순한 신규 예약에는 오버헤드가 크다고 판단했습니다. |
+| 낙관적 락 (`@Version`) | 이미 있는 행을 수정할 때 쓰는 방식이라, 새 행을 넣는 예약 생성에는 맞지 않았습니다. |
+| `UNIQUE(날짜, 슬롯)` | 취소된 예약 행이 남아 있어 같은 시간을 다시 예약할 수 없었습니다. 취소 이력은 지울 수 없어서 쓰지 않았습니다. |
+| 가상 컬럼 `SLOT_KEY` + 유니크 (채택) | 취소 건은 키가 `NULL`이 되어 유니크 검사에서 빠지고, 취소 처리에서 키를 따로 비울 필요가 없습니다. |
+
+```sql
+ALTER TABLE RESERVE ADD COLUMN SLOT_KEY VARCHAR(30) AS (
+  IF(RESERVE_STATUS <> 'C', CONCAT(RESERVE_DATE, '-', SLOT_NO), NULL)
+) VIRTUAL;
+ALTER TABLE RESERVE ADD CONSTRAINT UX_RESERVE_SLOT UNIQUE (SLOT_KEY);
+```
+
+1. 두 번째 요청의 `INSERT`가 유니크 인덱스에 막혀 중복 오류가 납니다.
+2. 컨트롤러가 `DataIntegrityViolationException`을 받아 "이미 예약된 시간입니다"로 응답합니다([`ReserveController.java`](src/main/java/com/commit/project1/reserve/controller/ReserveController.java#L141)).
+
+**한계:** 위 스키마 SQL은 이 저장소에 없습니다. 동시 요청 시험은 자동 테스트가 아니라 수동으로 한 번 측정한 것입니다.
+
+</details>
 
 ![시연](docs/demo.gif)
 
